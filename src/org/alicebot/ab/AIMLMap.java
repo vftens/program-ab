@@ -33,14 +33,17 @@ public class AIMLMap extends HashMap<String, String> {
     String host; // for external maps
     String botid; // for external maps
     boolean isExternal = false;
+    Inflector inflector = new Inflector();
+    Bot bot;
 
        /**
         * constructor to create a new AIML Map
         *
         * @param name      the name of the map
         */
-    public AIMLMap (String name) {
+    public AIMLMap (String name, Bot bot) {
         super();
+        this.bot = bot;
         this.mapName = name;
     }
 
@@ -57,7 +60,7 @@ public class AIMLMap extends HashMap<String, String> {
                 int number = Integer.parseInt(key);
                 return String.valueOf(number+1);
             } catch (Exception ex) {
-                return MagicStrings.unknown_map_value;
+                return MagicStrings.default_map;
             }
         }
         else if (mapName.equals(MagicStrings.map_predecessor)) {
@@ -65,19 +68,25 @@ public class AIMLMap extends HashMap<String, String> {
                 int number = Integer.parseInt(key);
                 return String.valueOf(number-1);
             } catch (Exception ex) {
-                return MagicStrings.unknown_map_value;
+                return MagicStrings.default_map;
             }
+        }
+        else if (mapName.equals("singular")) {
+            return inflector.singularize(key).toLowerCase();
+        }
+        else if (mapName.equals("plural")) {
+            return inflector.pluralize(key).toLowerCase();
         }
         else if (isExternal && MagicBooleans.enable_external_sets) {
             //String[] split = key.split(" ");
             String query = mapName.toUpperCase()+" "+key;
-            String response = Sraix.sraix(null, query, MagicStrings.unknown_map_value, null, host, botid, null, "0");
+            String response = Sraix.sraix(null, query, MagicStrings.default_map, null, host, botid, null, "0");
             System.out.println("External "+mapName+"("+key+")="+response);
             value = response;
         }
         else value = super.get(key);
-        if (value == null) value = MagicStrings.unknown_map_value;
-        System.out.println("AIMLMap get "+key+"="+value);
+        if (value == null) value = MagicStrings.default_map;
+        //System.out.println("AIMLMap get "+key+"="+value);
         return value;
     }
 
@@ -93,13 +102,25 @@ public class AIMLMap extends HashMap<String, String> {
         return super.put(key, value);
     }
 
-       /**
-        * reads an input stream and loads a map into the bot.
-        *
-        * @param in    input stream
-        * @param bot   AIML bot
-        * @return      number of map elements loaded
-        */
+
+       public  void writeAIMLMap () {
+           System.out.println("Writing AIML Map "+mapName);
+           try{
+               // Create file
+               FileWriter fstream = new FileWriter(bot.maps_path+"/"+mapName+".txt");
+               BufferedWriter out = new BufferedWriter(fstream);
+               for (String p : this.keySet()) {
+                   p = p.trim();
+                   //System.out.println(p+"-->"+this.get(p));
+                   out.write(p+":"+this.get(p).trim());
+                   out.newLine();
+               }
+               //Close the output stream
+               out.close();
+           }catch (Exception e){//Catch exception if any
+               System.err.println("Error: " + e.getMessage());
+           }
+       }
     public int readAIMLMapFromInputStream(InputStream in, Bot bot)  {
         int cnt=0;
         BufferedReader br = new BufferedReader(new InputStreamReader(in));
@@ -139,22 +160,24 @@ public class AIMLMap extends HashMap<String, String> {
         *
         * @param bot          the bot associated with this map.
         */
-    public void readAIMLMap (Bot bot) {
-        System.out.println("Reading AIML Map "+MagicStrings.maps_path+"/"+mapName+".txt");
+    public int readAIMLMap (Bot bot) {
+        int cnt = 0;
+        if (MagicBooleans.trace_mode) System.out.println("Reading AIML Map "+bot.maps_path+"/"+mapName+".txt");
         try{
             // Open the file that is the first
             // command line parameter
-            File file = new File(MagicStrings.maps_path+"/"+mapName+".txt");
+            File file = new File(bot.maps_path+"/"+mapName+".txt");
             if (file.exists()) {
-                FileInputStream fstream = new FileInputStream(MagicStrings.maps_path+"/"+mapName+".txt");
+                FileInputStream fstream = new FileInputStream(bot.maps_path+"/"+mapName+".txt");
                 // Get the object
-                readAIMLMapFromInputStream(fstream, bot);
+                cnt = readAIMLMapFromInputStream(fstream, bot);
                 fstream.close();
             }
-            else System.out.println(MagicStrings.maps_path+"/"+mapName+".txt not found");
+            else System.out.println(bot.maps_path+"/"+mapName+".txt not found");
         }catch (Exception e){//Catch exception if any
             System.err.println("Error: " + e.getMessage());
         }
+        return cnt;
 
     }
 

@@ -33,7 +33,7 @@ public class Properties extends HashMap<String, String> {
      */
     public String get(String key) {
         String result = super.get(key);
-        if (result == null) return MagicStrings.unknown_property_value;
+        if (result == null) return MagicStrings.default_property;
         else return result;
     }
 
@@ -42,7 +42,8 @@ public class Properties extends HashMap<String, String> {
      *
      * @param in    Input stream
      */
-    public void getPropertiesFromInputStream(InputStream in)  {
+    public int getPropertiesFromInputStream(InputStream in)  {
+        int cnt = 0;
         BufferedReader br = new BufferedReader(new InputStreamReader(in));
         String strLine;
         //Read File Line By Line
@@ -52,11 +53,13 @@ public class Properties extends HashMap<String, String> {
                 String property = strLine.substring(0, strLine.indexOf(":"));
                 String value = strLine.substring(strLine.indexOf(":")+1);
                 put(property, value);
+                cnt++;
             }
         }
         } catch (Exception ex) {
             ex.printStackTrace();
         }
+        return cnt;
     }
 
     /**
@@ -64,22 +67,24 @@ public class Properties extends HashMap<String, String> {
      *
      * @param filename   file containing bot properties
      */
-    public void getProperties (String filename) {
-        System.out.println("Get Properties: "+filename);
+    public int getProperties (String filename) {
+        int cnt = 0;
+        if (MagicBooleans.trace_mode) System.out.println("Get Properties: "+filename);
         try {
             // Open the file that is the first
             // command line parameter
             File file = new File(filename);
             if (file.exists()) {
-                System.out.println("Exists: "+filename);
+                if (MagicBooleans.trace_mode) System.out.println("Exists: "+filename);
                 FileInputStream fstream = new FileInputStream(filename);
                 // Get the object
-                getPropertiesFromInputStream(fstream);
+                cnt = getPropertiesFromInputStream(fstream);
                 //Close the input stream
                 fstream.close();
             }
         } catch (Exception e){//Catch exception if any
             System.err.println("Error: " + e.getMessage());
         }
+        return cnt;
     }
 }
