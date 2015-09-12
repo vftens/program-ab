@@ -43,14 +43,17 @@ public class AIMLSet extends HashSet<String> {
     String host; // for external sets
     String botid; // for external sets
     boolean isExternal = false;
-
+    Bot bot;
+    private HashSet<String> inCache = new HashSet<String>();
+    private HashSet<String> outCache = new HashSet<String>();
 
     /**
      * constructor
      * @param name    name of set
      */
-    public AIMLSet (String name) {
+    public AIMLSet (String name, Bot bot) {
         super();
+        this.bot = bot;
         this.setName = name.toLowerCase();
         if (setName.equals(MagicStrings.natural_number_set_name))  maxLength = 1;
     }
@@ -58,13 +61,15 @@ public class AIMLSet extends HashSet<String> {
         //if (isExternal)  log.info("External "+setName+" contains "+s+"?");
         //else  log.info("Internal "+setName+" contains "+s+"?");
         if (isExternal && MagicBooleans.enable_external_sets) {
+            if (inCache.contains(s)) return true;
+            if (outCache.contains(s)) return false;
             String[] split = s.split(" ");
             if (split.length > maxLength) return false;
             String query = MagicStrings.set_member_string+setName.toUpperCase()+" "+s;
             String response = Sraix.sraix(null, query, "false", null, host, botid, null, "0");
-            log.info("External "+setName+" contains "+s+"? "+response);
-            if (response.equals("true")) return true;
-            else return false;
+            log.info("External {} contains {}? {}", setName, s, response);
+            if (response.equals("true")) {inCache.add(s); return true;}
+            else {outCache.add(s); return false; }
         } else if (setName.equals(MagicStrings.natural_number_set_name)) {
             Pattern numberPattern = Pattern.compile("[0-9]+");
             Matcher numberMatcher = numberPattern.matcher(s);
@@ -78,7 +83,7 @@ public class AIMLSet extends HashSet<String> {
         log.info("Writing AIML Set "+setName);
         try{
             // Create file
-            FileWriter fstream = new FileWriter(MagicStrings.sets_path+"/"+setName+".txt");
+            FileWriter fstream = new FileWriter(bot.sets_path+"/"+setName+".txt");
             BufferedWriter out = new BufferedWriter(fstream);
             for (String p : this) {
 
@@ -128,23 +133,24 @@ public class AIMLSet extends HashSet<String> {
         return cnt;
     }
 
-    public void readAIMLSet (Bot bot) {
-        final String setPath = MagicStrings.sets_path+"/"+setName+".txt";
-		log.info("Reading AIML Set " + setPath);
+    public int readAIMLSet (Bot bot) {
+        int cnt=0;
+        if (MagicBooleans.trace_mode) log.info("Reading AIML Set {}", bot.sets_path + "/" + setName + ".txt");
+        // Open the file that is the first
+        // command line parameter
+        File file = new File(bot.sets_path+"/"+setName+".txt");
         try{
-            // Open the file that is the first
-            // command line parameter
-            File file = new File(setPath);
             if (file.exists()) {
-                FileInputStream fstream = new FileInputStream(setPath);
+                FileInputStream fstream = new FileInputStream(bot.sets_path+"/"+setName+".txt");
                 // Get the object
-                readAIMLSetFromInputStream(fstream, bot);
+                cnt = readAIMLSetFromInputStream(fstream, bot);
                 fstream.close();
             }
-            else log.info(MagicStrings.sets_path+"/"+setName+".txt not found");
+            else log.info("{} not found", bot.sets_path+"/"+setName+".txt");
         }catch (Exception e){//Catch exception if any
-            log.error("Cannot read AIML set '" + setPath + "': " + e, e);
+            log.error("Cannot read AIML set '" + file + "': " + e, e);
         }
+        return cnt;
 
     }
 

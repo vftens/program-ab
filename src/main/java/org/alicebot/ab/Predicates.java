@@ -23,6 +23,10 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+
+import org.alicebot.ab.utils.JapaneseUtils;
+
+import java.io.*;
 import java.util.HashMap;
 
 import org.slf4j.Logger;
@@ -44,10 +48,17 @@ public class Predicates extends HashMap<String, String> {
      * @param value       predicate value
      * @return            predicate value
      */
-    @Override
-	public String put(String key, String value) {
-        if (MagicBooleans.trace_mode) log.info("Setting predicate {} to {}", key, value);
-        return super.put(key, value);
+    public String put(String key, String value) {
+		//MagicBooleans.trace("predicates.put(key: " + key + ", value: " + value + ")");
+        if (MagicBooleans.jp_tokenize) {
+            if (key.equals("topic")) value = JapaneseUtils.tokenizeSentence(value);
+        }
+        if (key.equals("topic") && value.length()==0) value = MagicStrings.default_get;
+        if (value.equals(MagicStrings.too_much_recursion)) value = MagicStrings.default_list_item;
+        // MagicBooleans.trace("Setting predicate key: " + key + " to value: " + value);
+		String result = super.put(key, value);
+		//MagicBooleans.trace("in predicates.put, returning: " + result);
+        return result;
     }
 
     /**
@@ -57,9 +68,11 @@ public class Predicates extends HashMap<String, String> {
      * @return    predicate value
      */
     public String get(String key) {
+		//MagicBooleans.trace("predicates.get(key: " + key + ")");
         String result = super.get(key);
-        if (result == null) return MagicStrings.unknown_predicate_value;
-        else return result;
+        if (result == null) result = MagicStrings.default_get;
+		//MagicBooleans.trace("in predicates.get, returning: " + result);
+        return result;
     }
 
     /**

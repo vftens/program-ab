@@ -39,6 +39,7 @@ import org.slf4j.LoggerFactory;
 public class PreProcessor {
 	private static final Logger log = LoggerFactory
 			.getLogger(PreProcessor.class);
+
     public int normalCount = 0;
     public int denormalCount = 0;
     public int personCount = 0;
@@ -61,12 +62,13 @@ public class PreProcessor {
      * @param bot       AIML bot
      */
     public PreProcessor (Bot bot) {
-        normalCount = readSubstitutions(MagicStrings.config_path+"/normal.txt", normalPatterns, normalSubs);
-        denormalCount = readSubstitutions(MagicStrings.config_path+"/denormal.txt", denormalPatterns, denormalSubs);
-        personCount = readSubstitutions(MagicStrings.config_path +"/person.txt", personPatterns, personSubs);
-        person2Count = readSubstitutions(MagicStrings.config_path +"/person2.txt", person2Patterns, person2Subs);
-        genderCount = readSubstitutions(MagicStrings.config_path +"/gender.txt", genderPatterns, genderSubs);
-        log.info("Preprocessor: "+normalCount+" norms "+personCount+" persons "+person2Count+" person2 ");
+
+        normalCount = readSubstitutions(bot.config_path+"/normal.txt", normalPatterns, normalSubs);
+        denormalCount = readSubstitutions(bot.config_path+"/denormal.txt", denormalPatterns, denormalSubs);
+        personCount = readSubstitutions(bot.config_path +"/person.txt", personPatterns, personSubs);
+        person2Count = readSubstitutions(bot.config_path +"/person2.txt", person2Patterns, person2Subs);
+        genderCount = readSubstitutions(bot.config_path +"/gender.txt", genderPatterns, genderSubs);
+        log.info("Preprocessor: " + normalCount + " norms " + personCount + " persons " + person2Count + " person2 ");
     }
 
     /**
@@ -76,7 +78,11 @@ public class PreProcessor {
      * @return         normalized client input
      */
     public String normalize (String request) {
-        return substitute(request,  normalPatterns, normalSubs, normalCount);
+		log.debug("PreProcessor.normalize(request: " + request + ")");
+		String result = substitute(request,  normalPatterns, normalSubs, normalCount);
+        result = result.replaceAll("(\r\n|\n\r|\r|\n)", " ");
+        log.debug("PreProcessor.normalize() returning: " + result);
+        return result;
     }
     /**
      * apply denormalization substitutions to a request
@@ -126,15 +132,17 @@ public class PreProcessor {
      */
     String substitute(String request, Pattern[] patterns, String[] subs, int count) {
         String result = " "+request+" ";
+        int index=0;
         try {
         for (int i = 0; i < count; i++) {
-
+            index = i;
             String replacement =  subs[i];
             Pattern p = patterns[i];
             Matcher m = p.matcher(result);
             //log.info(i+" "+patterns[i].pattern()+"-->"+subs[i]);
             if (m.find()) {
-                //log.info(m.group());
+                //log.debug(i+" "+patterns[i].pattern()+"-->"+subs[i]);
+                //log.debug(m.group());
                 result = m.replaceAll(replacement);
             }
 
@@ -145,6 +153,7 @@ public class PreProcessor {
         //log.info("Normalized: "+result);
         } catch (Exception ex)    {
             ex.printStackTrace();
+            System.out.println("Request "+request+" Result "+result+" at "+index+" "+patterns[index]+" "+subs[index]);
         }
         return result.trim();
     }
@@ -158,30 +167,32 @@ public class PreProcessor {
      * @return          number of patterns substitutions read
      */
     public int readSubstitutionsFromInputStream(InputStream in, Pattern[] patterns, String[] subs) {
-    BufferedReader br = new BufferedReader(new InputStreamReader(in));
-    String strLine;
-    //Read File Line By Line
-    int subCount = 0;
-    try {
-    while ((strLine = br.readLine()) != null)   {
-        //log.info(strLine);
-        strLine = strLine.trim();
-        Pattern pattern = Pattern.compile("\"(.*?)\",\"(.*?)\"", Pattern.DOTALL);
-        Matcher matcher = pattern.matcher(strLine);
-        if (matcher.find() && subCount < MagicNumbers.max_substitutions) {
-            subs[subCount] = matcher.group(2);
-            String quotedPattern = Pattern.quote(matcher.group(1));
-            //log.info("quoted pattern="+quotedPattern);
-            patterns[subCount] = Pattern.compile(quotedPattern, Pattern.CASE_INSENSITIVE);
-            subCount++;
-        }
+        BufferedReader br = new BufferedReader(new InputStreamReader(in));
+        String strLine;
+        //Read File Line By Line
+        int subCount = 0;
+        try {
+            while ((strLine = br.readLine()) != null)   {
+                //System.out.println(strLine);
+                strLine = strLine.trim();
+                if (!strLine.startsWith(MagicStrings.text_comment_mark)) {
+                    Pattern pattern = Pattern.compile("\"(.*?)\",\"(.*?)\"", Pattern.DOTALL);
+                    Matcher matcher = pattern.matcher(strLine);
+                    if (matcher.find() && subCount < MagicNumbers.max_substitutions) {
+                        subs[subCount] = matcher.group(2);
+                        String quotedPattern = Pattern.quote(matcher.group(1));
+                        //System.out.println("quoted pattern="+quotedPattern);
+                        patterns[subCount] = Pattern.compile(quotedPattern, Pattern.CASE_INSENSITIVE);
+                        subCount++;
+                    }
+                }
 
+            }
+        } catch (Exception ex) {
+            ex.printStackTrace();
+        }
+        return subCount;
     }
-    } catch (Exception ex) {
-        ex.printStackTrace();
-    }
-    return subCount;
-}
 
     /**
      * read substitutions from a file
@@ -242,9 +253,24 @@ public class PreProcessor {
             String strLine;
             //Read File Line By Line
             while ((strLine = br.readLine()) != null)   {
-                strLine = normalize(strLine); //.toUpperCase();
-                bw.write(strLine);
-                bw.newLine();
+                strLine = strLine.trim();
+                if (strLine.length() > 0) {
+                    String norm = normalize(strLine).toUpperCase();
+                    String sentences[] = sentenceSplit(norm); {
+                        if (sentences.length > 1) {
+                            for (String s : sentences)
+                                System.out.println(norm+"-->"+s);
+                        }
+                        for (String sentence : sentences) {
+                            sentence = sentence.trim();
+                            if (sentence.length() > 0) {
+                                //System.out.println("'"+strLine+"'-->'"+norm+"'");
+                                bw.write(sentence);
+                                bw.newLine();
+                            }
+                        }
+                    }
+                }
             }
             bw.close();
             br.close();

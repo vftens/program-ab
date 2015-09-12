@@ -31,6 +31,7 @@ import org.slf4j.LoggerFactory;
 
 public class Utilities {
 	private static final Logger log = LoggerFactory.getLogger(Utilities.class);
+
     /**
      * Excel sometimes adds mysterious formatting to CSV files.
      * This function tries to clean it up.
@@ -66,8 +67,10 @@ public class Utilities {
         String contents = "";
         try {
             while ((strLine = br.readLine()) != null)   {
+                if (!strLine.startsWith(MagicStrings.text_comment_mark)) {
                 if (strLine.length() == 0) contents += "\n";
                 else contents  += strLine+"\n";
+                }
             }
         } catch (Exception ex) {
             ex.printStackTrace();
@@ -111,7 +114,7 @@ public class Utilities {
         String year = CalendarUtils.year();
         String date = CalendarUtils.date();
         try {
-                copyright = getFile(MagicStrings.config_path+"/copyright.txt") ;
+                copyright = getFile(bot.config_path+"/copyright.txt") ;
                 String[] splitCopyright = copyright.split("\n");
                 copyright = "";
                 for (int i = 0; i < splitCopyright.length; i++) {
@@ -128,17 +131,18 @@ public class Utilities {
         } catch (Exception e){//Catch exception if any
             log.error("Cannot get copyright from '" + AIMLFilename + "': " + e, e);
         }
+        copyright += "<!--  -->\n";
         //log.info("Copyright: "+copyright);
         return copyright;
     }
 
-    public static String getPannousAPIKey () {
-       String apiKey = getFile(MagicStrings.config_path+"/pannous-apikey.txt");
+    public static String getPannousAPIKey (Bot bot) {
+       String apiKey = getFile(bot.config_path+"/pannous-apikey.txt");
        if (apiKey.equals("")) apiKey = MagicStrings.pannous_api_key;
        return apiKey;
     }
-    public static String getPannousLogin () {
-        String login = getFile(MagicStrings.config_path+"/pannous-login.txt");
+    public static String getPannousLogin (Bot bot) {
+        String login = getFile(bot.config_path+"/pannous-login.txt");
         if (login.equals("")) login = MagicStrings.pannous_login;
         return login;
     }

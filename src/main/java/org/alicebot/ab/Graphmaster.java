@@ -18,8 +18,11 @@ package org.alicebot.ab;
         Free Software Foundation, Inc., 51 Franklin St, Fifth Floor,
         Boston, MA  02110-1301, USA.
 */
+
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -27,10 +30,13 @@ import org.slf4j.LoggerFactory;
 /**
  * The AIML Pattern matching algorithm and data structure.
  *
+ *
  */
 public class Graphmaster {
 	private static final Logger log = LoggerFactory.getLogger(Graphmaster.class);
+
     public Bot bot;
+    public String name;
     public final Nodemapper root;
     public int matchCount = 0;
     public int upgradeCnt = 0;
@@ -45,10 +51,16 @@ public class Graphmaster {
      * @param bot  the bot the graph belongs to.
      */
     public Graphmaster (Bot bot) {
+        this(bot, "brain");
+    }
+
+    public Graphmaster (Bot bot, String name) {
         root = new Nodemapper();
         this.bot = bot;
+        this.name = name;
         vocabulary = new HashSet<String>();
     }
+
 
     /**
      * Convert input, that and topic to a single sentence having the form
@@ -68,8 +80,39 @@ public class Graphmaster {
      *
      * @param category            AIML Category
      */
+    String botPropRegex = "<bot name=\"(.*?)\"/>";
+    Pattern botPropPattern = Pattern.compile(botPropRegex, Pattern.CASE_INSENSITIVE);
+
+    public String replaceBotProperties(String pattern) {
+        if (pattern.contains("<B")) {
+            Matcher matcher = botPropPattern.matcher(pattern);
+            while (matcher.find()) {
+                String propname = matcher.group(1).toLowerCase();
+                //System.out.println(matcher.group(1));
+                String property = bot.properties.get(propname).toUpperCase();
+                pattern = pattern.replaceFirst("(?i)"+botPropRegex, property);
+                //System.out.println("addCategory: Replaced pattern with: "+inputThatTopic);
+            }
+
+        }
+        return pattern;
+    }
     public void addCategory (Category category) {
-        Path p = Path.sentenceToPath(inputThatTopic(category.getPattern(), category.getThat(), category.getTopic()));
+        String inputThatTopic = inputThatTopic(category.getPattern(), category.getThat(), category.getTopic());
+        //System.out.println("addCategory: "+inputThatTopic);
+        inputThatTopic = replaceBotProperties(inputThatTopic);
+        /*if (inputThatTopic.contains("<B")) {
+        Matcher matcher = botPropPattern.matcher(inputThatTopic);
+        while (matcher.find()) {
+            String propname = matcher.group(1).toLowerCase();
+            //System.out.println(matcher.group(1));
+            String property = bot.properties.get(propname).toUpperCase();
+            inputThatTopic = inputThatTopic.replaceFirst("(?i)"+botPropRegex, property);
+            //System.out.println("addCategory: Replaced pattern with: "+inputThatTopic);
+        }
+        }*/
+        //
+        Path p = Path.sentenceToPath(inputThatTopic);
         addPath(p, category);
         categoryCnt++;
     }
@@ -79,17 +122,17 @@ public class Graphmaster {
         //log.info("thatStarTopicStar "+tail+" "+tail.equals("<THAT> * <TOPIC> *"));
         return tail.equals("<THAT> * <TOPIC> *");
     }
-    void addSets (String type, Bot bot, Nodemapper node) {
+    void addSets (String type, Bot bot, Nodemapper node, String filename) {
         //log.info("adding Set "+type+" from "+bot.setMap);
-        String typeName = Utilities.tagTrim(type, "SET").toLowerCase();
+        String setName = Utilities.tagTrim(type, "SET").toLowerCase();
         //AIMLSet aimlSet;
-        if (bot.setMap.containsKey(typeName)) {
+        if (bot.setMap.containsKey(setName)) {
             if (node.sets == null) node.sets = new ArrayList<String>();
-            node.sets.add(typeName);
-            // log.info("sets = "+node.sets);
+            if (!node.sets.contains(setName)) node.sets.add(setName);
+            //log.info("sets = "+node.sets);
         }
         else {
-            log.info("AIML Set "+typeName+" not found.");
+            log.info("No AIML Set found for <set>"+setName+"</set> in "+bot.name+" "+filename);
         }
     }
     /**
@@ -112,6 +155,7 @@ public class Graphmaster {
      * @param category    AIML Category
      */
     void addPath(Nodemapper node, Path path, Category category) {
+        //if (path != null) System.out.println("Enable shortcuts = "+enableShortCuts+" path="+Path.pathToSentence(path)+" "+thatStarTopicStar(path));
         if (path == null) {
             node.category = category;
             node.height = 0;
@@ -122,7 +166,7 @@ public class Graphmaster {
             node.shortCut = true;
         }
         else if (NodemapperOperator.containsKey(node, path.word)) {
-            if (path.word.startsWith("<SET>")) addSets(path.word, bot, node);
+            if (path.word.startsWith("<SET>")) addSets(path.word, bot, node, category.getFilename());
             Nodemapper nextNode = NodemapperOperator.get(node, path.word);
             addPath(nextNode, path.next, category);
             int offset = 1;
@@ -132,7 +176,7 @@ public class Graphmaster {
         else {
             Nodemapper nextNode = new Nodemapper();
             if (path.word.startsWith("<SET>")) {
-                addSets(path.word, bot, node);
+                addSets(path.word, bot, node, category.getFilename());
             }
             if (node.key != null)  {
                 NodemapperOperator.upgrade(node);
@@ -236,6 +280,7 @@ public class Graphmaster {
 				Chat.setMatchTrace(Chat.matchTrace + n.category.inputThatTopic()+"\n");
 			}
         }
+		//MagicBooleans.trace("in graphmaster.match(), returning: " + n);
         return n;
     }
 
@@ -261,7 +306,7 @@ public class Graphmaster {
             n.starBindings = sb;
         }
         //if (!n.category.getPattern().contains("*")) log.info("adding match "+inputThatTopic);
-        if (n != null) n.category.addMatch(inputThatTopic);
+        if (n != null) n.category.addMatch(inputThatTopic, bot);
         return n;
         } catch (Exception ex) {
             ex.printStackTrace();
@@ -413,6 +458,7 @@ public class Graphmaster {
         // log.info("Entering zeroMatch on "+path.word+" "+NodemapperOperator.get(node, wildcard));
         matchTrace += "["+wildcard+",]";
         if (path != null && NodemapperOperator.containsKey(node, wildcard)) {
+            //System.out.println("Zero match calling setStars Prop "+MagicStrings.null_star+" = "+bot.properties.get(MagicStrings.null_star));
             setStars(bot.properties.get(MagicStrings.null_star), starIndex, starState, inputStars, thatStars, topicStars);
             Nodemapper nextNode = NodemapperOperator.get(node, wildcard);
             return match(path, nextNode, input, starState, starIndex+1, inputStars, thatStars, topicStars, matchTrace);
@@ -470,43 +516,84 @@ public class Graphmaster {
         return null;
     }
 
-   final Nodemapper setMatch(Path path, Nodemapper node, String input, String starState, int starIndex, String[] inputStars, String[] thatStars, String[] topicStars, String matchTrace) {
-       if (node.sets == null || path.word.equals("<THAT>") || path.word.equals("<TOPIC>")) return null;
-       //log.info("setMatch sets ="+node.sets);
-       for (String setName : node.sets) {
-           //log.info("setMatch trying type "+setName);
-           Nodemapper nextNode = NodemapperOperator.get(node, "<SET>"+setName.toUpperCase()+"</SET>");
-           AIMLSet aimlSet = bot.setMap.get(setName);
-           //log.info(aimlSet.setName + "="+ aimlSet);
-           Nodemapper matchedNode;
-           String currentWord = path.word;
-           String starWords = currentWord+" ";
-           int length = 1;
-           matchTrace += "[<set>"+setName+"</set>,"+path.word+"]";
-           //log.info("setMatch starWords =\""+starWords+"\"");
-           for (Path qath = path.next; qath != null &&  !currentWord.equals("<THAT>") && !currentWord.equals("<TOPIC>") && length <= aimlSet.maxLength; qath = qath.next) {
-               //log.info("qath.word = "+qath.word);
-               String phrase = bot.preProcessor.normalize(starWords.trim()).toUpperCase();
-               //log.info("setMatch trying \""+phrase+"\" in "+setName);
-               if (aimlSet.contains(phrase) && (matchedNode = match(qath, nextNode, input, starState, starIndex + 1, inputStars, thatStars, topicStars, matchTrace)) != null) {
-                   setStars(starWords, starIndex, starState, inputStars, thatStars, topicStars);
-                   //log.info("setMatch found "+phrase+" in "+setName);
-                   return matchedNode;
-               }
-           //    else if (qath.word.equals("<THAT>") || qath.word.equals("<TOPIC>")) return null;
-               else {
-                   length = length + 1;
-                   currentWord = qath.word;
-                   starWords += currentWord + " ";
-               }
-           }
-       }
-       fail("set", matchTrace);
-       return null;
-   }
+      final Nodemapper setMatch(Path path, Nodemapper node, String input, String starState, int starIndex, String[] inputStars, String[] thatStars, String[] topicStars, String matchTrace) {
+        log.debug("Graphmaster.setMatch(path: " + path + ", node: " + node + ", input: " + input + ", starState: " + starState + ", starIndex: " + starIndex + ", inputStars, thatStars, topicStars, matchTrace: " + matchTrace + ", )");
+        if (node.sets == null || path.word.equals("<THAT>") || path.word.equals("<TOPIC>")) return null;
+          log.debug("in Graphmaster.setMatch, setMatch sets ="+node.sets);
+        for (String setName : node.sets) {
+            log.debug("in Graphmaster.setMatch, setMatch trying type "+setName);
+            Nodemapper nextNode = NodemapperOperator.get(node, "<SET>"+setName.toUpperCase()+"</SET>");
+            AIMLSet aimlSet = bot.setMap.get(setName);
+            //System.out.println(aimlSet.setName + "="+ aimlSet);
+            Nodemapper matchedNode;
+            Nodemapper bestMatchedNode = null;
+            String currentWord = path.word;
+            String starWords = currentWord+" ";
+            int length = 1;
+            matchTrace += "[<set>"+setName+"</set>,"+path.word+"]";
+            log.debug("in Graphmaster.setMatch, setMatch starWords =\""+starWords+"\"");
+            for (Path qath = path.next; qath != null &&  !currentWord.equals("<THAT>") && !currentWord.equals("<TOPIC>") && length <= aimlSet.maxLength; qath = qath.next) {
+                log.debug("in Graphmaster.setMatch, qath.word = "+qath.word);
+                String phrase = bot.preProcessor.normalize(starWords.trim()).toUpperCase();
+                log.debug("in Graphmaster.setMatch, setMatch trying \""+phrase+"\" in "+setName);
+                if (aimlSet.contains(phrase) && (matchedNode = match(qath, nextNode, input, starState, starIndex + 1, inputStars, thatStars, topicStars, matchTrace)) != null) {
+                    setStars(starWords, starIndex, starState, inputStars, thatStars, topicStars);
+                    log.debug("in Graphmaster.setMatch, setMatch found " + phrase + " in " + setName);
+                    bestMatchedNode = matchedNode;
+                }
+                //    else if (qath.word.equals("<THAT>") || qath.word.equals("<TOPIC>")) return null;
+
+                length = length + 1;
+                currentWord = qath.word;
+                starWords += currentWord + " ";
+
+            }
+            if (bestMatchedNode != null) return bestMatchedNode;
+        }
+        fail("set", matchTrace);
+        return null;
+    }
+
+    /*
+    final Nodemapper setMatch(Path path, Nodemapper node, String input, String starState, int starIndex, String[] inputStars, String[] thatStars, String[] topicStars, String matchTrace) {
+        if (DEBUG) System.out.println("Graphmaster.setMatch(path: " + path + ", node: " + node + ", input: " + input + ", starState: " + starState + ", starIndex: " + starIndex + ", inputStars, thatStars, topicStars, matchTrace: " + matchTrace + ", )");
+        if (node.sets == null || path.word.equals("<THAT>") || path.word.equals("<TOPIC>")) return null;
+        if (DEBUG) System.out.println("in Graphmaster.setMatch, setMatch sets ="+node.sets);
+        for (String setName : node.sets) {
+            if (DEBUG) System.out.println("in Graphmaster.setMatch, setMatch trying type "+setName);
+            Nodemapper nextNode = NodemapperOperator.get(node, "<SET>"+setName.toUpperCase()+"</SET>");
+            AIMLSet aimlSet = bot.setMap.get(setName);
+            //System.out.println(aimlSet.setName + "="+ aimlSet);
+            Nodemapper matchedNode;
+            String currentWord = path.word;
+            String starWords = currentWord+" ";
+            int length = 1;
+            matchTrace += "[<set>"+setName+"</set>,"+path.word+"]";
+            if (DEBUG) System.out.println("in Graphmaster.setMatch, setMatch starWords =\""+starWords+"\"");
+            for (Path qath = path.next; qath != null &&  !currentWord.equals("<THAT>") && !currentWord.equals("<TOPIC>") && length <= aimlSet.maxLength; qath = qath.next) {
+                if (DEBUG) System.out.println("in Graphmaster.setMatch, qath.word = "+qath.word);
+                String phrase = bot.preProcessor.normalize(starWords.trim()).toUpperCase();
+                if (DEBUG) System.out.println("in Graphmaster.setMatch, setMatch trying \""+phrase+"\" in "+setName);
+                if (aimlSet.contains(phrase) && (matchedNode = match(qath, nextNode, input, starState, starIndex + 1, inputStars, thatStars, topicStars, matchTrace)) != null) {
+                    setStars(starWords, starIndex, starState, inputStars, thatStars, topicStars);
+                    if (DEBUG) System.out.println("in Graphmaster.setMatch, setMatch found "+phrase+" in "+ setName);
+                    return matchedNode;
+                }
+                //    else if (qath.word.equals("<THAT>") || qath.word.equals("<TOPIC>")) return null;
+                else {
+                    length = length + 1;
+                    currentWord = qath.word;
+                    starWords += currentWord + " ";
+                }
+            }
+        }
+        fail("set", matchTrace);
+        return null;
+    }*/
 
     public void setStars(String starWords, int starIndex, String starState, String[] inputStars, String[] thatStars, String[] topicStars) {
     if (starIndex < MagicNumbers.max_stars) {
+        //System.out.println("starWords="+starWords);
         starWords = starWords.trim();
         if (starState.equals("inputStar")) inputStars[starIndex] = starWords;
         else if (starState.equals("thatStar")) thatStars[starIndex] = starWords;
@@ -523,8 +610,8 @@ public class Graphmaster {
             if (NodemapperOperator.isLeaf(node) || node.shortCut) {
                 template = Category.templateToLine(node.category.getTemplate());
                 template = template.substring(0, Math.min(16, template.length()));
-                if (node.shortCut) log.info(partial+"("+NodemapperOperator.size(node)+"["+node.key+","+node.value+"])--<THAT>-->X(1)--*-->X(1)--<TOPIC>-->X(1)--*-->"+template+"...");
-                else log.info(partial+"("+NodemapperOperator.size(node)+"["+node.key+","+node.value+"]) "+template+"...");
+                if (node.shortCut) log.info(partial + "(" + NodemapperOperator.size(node) + "[" + node.height + "])--<THAT>-->X(1)--*-->X(1)--<TOPIC>-->X(1)--*-->" + template + "...");
+                else log.info(partial+"("+NodemapperOperator.size(node)+"["+node.height+"]) "+template+"...");
             }
             for (String key : NodemapperOperator.keySet(node)) {
                 //log.info(key);
@@ -567,7 +654,7 @@ public class Graphmaster {
         shortCutCnt = 0;
         naryCnt = 0;
         nodeStatsGraph(root);
-        resultNote = nodeCnt+" nodes "+singletonCnt+" singletons "+leafCnt+" leaves "+shortCutCnt+" shortcuts "+naryCnt+" n-ary "+nodeSize+" branches "+(float)nodeSize/(float)nodeCnt+" average branching ";
+        resultNote = bot.name+" ("+name+"): "+getCategories().size()+" categories "+nodeCnt+" nodes "+singletonCnt+" singletons "+leafCnt+" leaves "+shortCutCnt+" shortcuts "+naryCnt+" n-ary "+nodeSize+" branches "+(float)nodeSize/(float)nodeCnt+" average branching ";
         log.info(resultNote);
     }
     public void nodeStatsGraph(Nodemapper node) {

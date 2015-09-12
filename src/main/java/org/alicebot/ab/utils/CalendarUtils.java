@@ -1,5 +1,7 @@
 package org.alicebot.ab.utils;
 
+import org.alicebot.ab.MagicBooleans;
+
 import java.text.SimpleDateFormat;
 import java.util.Calendar;
 import java.util.Date;
@@ -12,6 +14,13 @@ import org.slf4j.LoggerFactory;
 
 public class CalendarUtils {
 	private static final Logger log = LoggerFactory.getLogger(CalendarUtils.class);
+
+	public static String formatTime(String formatString, long msSinceEpoch) {
+        SimpleDateFormat dateFormat = new SimpleDateFormat(formatString);
+		Calendar cal = Calendar.getInstance();
+		dateFormat.setCalendar(cal);
+		return dateFormat.format(new Date(msSinceEpoch));
+	}
 
 	public static int timeZoneOffset() {
 		Calendar cal = Calendar.getInstance();
@@ -48,10 +57,10 @@ public class CalendarUtils {
           dateAsString = simpleDateFormat.format(new Date());
         }
         catch (Exception ex) {
-            log.info("CalendarUtils.date Bad date: Format = {} Locale = {} Timezone = {}",
-            		jformat, locale, timezone);
+            throw new RuntimeException("CalendarUtils.date Bad date: Format = "+jformat+" Locale = "+locale+" Timezone = "+timezone, ex);
         }
-        log.info("CalendarUtils.date: {}", dateAsString);
+        //MagicBooleans.trace("CalendarUtils.date: "+dateAsString);
         return dateAsString;
     }
+
 }

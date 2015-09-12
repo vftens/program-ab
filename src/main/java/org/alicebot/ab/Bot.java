@@ -2,6 +2,7 @@ package org.alicebot.ab;
 /* Program AB Reference AIML 2.0 implementation
         Copyright (C) 2013 ALICE A.I. Foundation
         Contact: info@alicebot.org
+        Contact: info@alicebot.org
 
         This library is free software; you can redistribute it and/or
         modify it under the terms of the GNU Library General Public
@@ -34,6 +35,11 @@ import java.util.Set;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.alicebot.ab.utils.IOUtils;
+
+import java.io.*;
+import java.util.*;
+
 
 /**
  * Class representing the AIML bot
@@ -43,17 +49,25 @@ public class Bot {
     public final Properties properties = new Properties();
     public final PreProcessor preProcessor;
     public final Graphmaster brain;
-    public final Graphmaster inputGraph;
-    public final Graphmaster learnfGraph;
-    public final Graphmaster patternGraph;
-    public final Graphmaster deletedGraph;
-    public Graphmaster unfinishedGraph;
-  //  public final ArrayList<Category> categories;
-    public ArrayList<Category> suggestedCategories;
-    public String name=MagicStrings.unknown_bot_name;
+    public Graphmaster learnfGraph;
+    public Graphmaster learnGraph;
+
+    // public Graphmaster unfinishedGraph;
+    //  public final ArrayList<Category> categories;
+
+    public String name=MagicStrings.default_bot_name;
     public HashMap<String, AIMLSet> setMap = new HashMap<String, AIMLSet>();
     public HashMap<String, AIMLMap> mapMap = new HashMap<String, AIMLMap>();
-
+    public HashSet<String> pronounSet = new HashSet<String>();
+    public String root_path = "c:/ab";
+    public String bot_path = root_path+"/bots";
+    public String bot_name_path = bot_path+"/super";
+    public String aimlif_path = bot_path+"/aimlif";
+    public String aiml_path = bot_path+"/aiml";
+    public String config_path = bot_path+"/config";
+    public String log_path = bot_path+"/log";
+    public String sets_path = bot_path+"/sets";
+    public String maps_path = bot_path+"/maps";
     /**
      * Set all directory path variables for this bot
      *
@@ -61,24 +75,24 @@ public class Bot {
      * @param name        name of bot
      */
     public void setAllPaths (String root, String name) {
-        MagicStrings.bot_path = root+"/bots";
-        MagicStrings.bot_name_path = MagicStrings.bot_path+"/"+name;
-        log.info("Name = {} Path = {}", name, MagicStrings.bot_name_path);
-        MagicStrings.aiml_path = MagicStrings.bot_name_path+"/aiml";
-        MagicStrings.aimlif_path = MagicStrings.bot_name_path+"/aimlif";
-        MagicStrings.config_path = MagicStrings.bot_name_path+"/config";
-        MagicStrings.log_path = MagicStrings.bot_name_path+"/logs";
-        MagicStrings.sets_path = MagicStrings.bot_name_path+"/sets";
-        MagicStrings.maps_path = MagicStrings.bot_name_path+"/maps";
-        log.info(MagicStrings.root_path);
-        log.info(MagicStrings.bot_path);
-        log.info(MagicStrings.bot_name_path);
-        log.info(MagicStrings.aiml_path);
-        log.info(MagicStrings.aimlif_path);
-        log.info(MagicStrings.config_path);
-        log.info(MagicStrings.log_path);
-        log.info(MagicStrings.sets_path);
-        log.info(MagicStrings.maps_path);
+        bot_path = root+"/bots";
+        bot_name_path = bot_path+"/"+name;
+        if (MagicBooleans.trace_mode) System.out.println("Name = "+name+" Path = "+bot_name_path);
+        aiml_path = bot_name_path+"/aiml";
+        aimlif_path = bot_name_path+"/aimlif";
+        config_path = bot_name_path+"/config";
+        log_path = bot_name_path+"/logs";
+        sets_path = bot_name_path+"/sets";
+        maps_path = bot_name_path+"/maps";
+        log.info(root_path);
+        log.info(bot_path);
+        log.info(bot_name_path);
+        log.info(aiml_path);
+        log.info(aimlif_path);
+        log.info(config_path);
+        log.info(log_path);
+        log.info(sets_path);
+        log.info(maps_path);
     }
 
     /**
@@ -114,52 +128,76 @@ public class Bot {
      * @param action   Program AB action
      */
     public Bot(String name, String path, String action) {
+        int cnt=0;
+        int elementCnt=0;
         this.name = name;
         setAllPaths(path, name);
         this.brain = new Graphmaster(this);
-        this.inputGraph = new Graphmaster(this);
-        this.learnfGraph = new Graphmaster(this);
-        this.deletedGraph = new Graphmaster(this);
-        this.patternGraph = new Graphmaster(this);
-        this.unfinishedGraph = new Graphmaster(this);
+
+        this.learnfGraph = new Graphmaster(this, "learnf");
+        this.learnGraph = new Graphmaster(this, "learn");
+  //      this.unfinishedGraph = new Graphmaster(this);
       //  this.categories = new ArrayList<Category>();
-        this.suggestedCategories = new ArrayList<Category>();
+
         preProcessor = new PreProcessor(this);
         addProperties();
-        addAIMLSets();
-        addAIMLMaps();
-        AIMLSet number = new AIMLSet(MagicStrings.natural_number_set_name);
+        cnt = addAIMLSets();
+        if (MagicBooleans.trace_mode) System.out.println("Loaded "+cnt+" set elements.");
+        cnt = addAIMLMaps();
+        if (MagicBooleans.trace_mode) System.out.println("Loaded "+cnt+" map elements");
+        this.pronounSet = getPronouns();
+        AIMLSet number = new AIMLSet(MagicStrings.natural_number_set_name, this);
         setMap.put(MagicStrings.natural_number_set_name, number);
-        AIMLMap successor = new AIMLMap(MagicStrings.map_successor);
+        AIMLMap successor = new AIMLMap(MagicStrings.map_successor, this);
         mapMap.put(MagicStrings.map_successor, successor);
-        AIMLMap predecessor = new AIMLMap(MagicStrings.map_predecessor);
+        AIMLMap predecessor = new AIMLMap(MagicStrings.map_predecessor, this);
         mapMap.put(MagicStrings.map_predecessor, predecessor);
-        //log.info("setMap = "+setMap);
-        Date aimlDate = new Date(new File(MagicStrings.aiml_path).lastModified());
-        Date aimlIFDate = new Date(new File(MagicStrings.aimlif_path).lastModified());
-        log.info("AIML modified {} AIMLIF modified {}", aimlDate, aimlIFDate);
-        readDeletedIFCategories();
-        readUnfinishedIFCategories();
-        MagicStrings.pannous_api_key = Utilities.getPannousAPIKey();
-        MagicStrings.pannous_login = Utilities.getPannousLogin();
+        AIMLMap singular = new AIMLMap(MagicStrings.map_singular, this);
+        mapMap.put(MagicStrings.map_singular, singular);
+        AIMLMap plural = new AIMLMap(MagicStrings.map_plural, this);
+        mapMap.put(MagicStrings.map_plural, plural);
+        //log.debug("setMap = "+setMap);
+        Date aimlDate = new Date(new File(aiml_path).lastModified());
+        Date aimlIFDate = new Date(new File(aimlif_path).lastModified());
+        log.debug("AIML modified "+aimlDate+" AIMLIF modified "+aimlIFDate);
+        //readUnfinishedIFCategories();
+        MagicStrings.pannous_api_key = Utilities.getPannousAPIKey(this);
+        MagicStrings.pannous_login = Utilities.getPannousLogin(this);
         if (action.equals("aiml2csv")) addCategoriesFromAIML();
         else if (action.equals("csv2aiml")) addCategoriesFromAIMLIF();
+        else if (action.equals("chat-app")) {
+            log.debug("Loading only AIMLIF files");
+            cnt = addCategoriesFromAIMLIF();
+        }
         else if (aimlDate.after(aimlIFDate)) {
-            log.info("AIML modified after AIMLIF");
-            addCategoriesFromAIML();
+            log.debug("AIML modified after AIMLIF");
+            cnt = addCategoriesFromAIML();
             writeAIMLIFFiles();
         }
         else {
             addCategoriesFromAIMLIF();
             if (brain.getCategories().size()==0) {
                 log.info("No AIMLIF Files found.  Looking for AIML");
-                addCategoriesFromAIML();
+                cnt = addCategoriesFromAIML();
             }
         }
-        log.info("--> Bot {} {} completed {} deleted {} unfinished",
-        		name, brain.getCategories().size(), deletedGraph.getCategories().size(), unfinishedGraph.getCategories().size());
-    }
+        Category b = new Category(0, "PROGRAM VERSION", "*", "*", MagicStrings.program_name_version, "update.aiml");
+        brain.addCategory(b);
+        brain.nodeStats();
+        learnfGraph.nodeStats();
 
+    }
+    HashSet<String> getPronouns() {
+        HashSet<String> pronounSet = new HashSet<String>();
+        String pronouns = Utilities.getFile(config_path+"/pronouns.txt");
+        String[] splitPronouns = pronouns.split("\n");
+        for (int i = 0; i < splitPronouns.length; i++) {
+            String p = splitPronouns[i].trim();
+            if (p.length() > 0) pronounSet.add(p);
+        }
+        if (MagicBooleans.trace_mode) System.out.println("Read pronouns: "+pronounSet);
+        return pronounSet;
+    }
     /**
      * add an array list of categories with a specific file name
      *
@@ -168,23 +206,17 @@ public class Bot {
      */
     void addMoreCategories (String file, ArrayList<Category> moreCategories) {
         if (file.contains(MagicStrings.deleted_aiml_file)) {
-            for (Category c : moreCategories) {
-                //log.info("Delete "+c.getPattern());
+           /* for (Category c : moreCategories) {
+                //System.out.println("Delete "+c.getPattern());
                 deletedGraph.addCategory(c);
-            }
-        } else if (file.contains(MagicStrings.unfinished_aiml_file)) {
-            for (Category c : moreCategories) {
-                //log.info("Delete "+c.getPattern());
-                if (brain.findNode(c) == null)
-                unfinishedGraph.addCategory(c);
-                else log.info("unfinished {} found in brain", c.inputThatTopic());
-            }
+            }*/
+
         } else if (file.contains(MagicStrings.learnf_aiml_file) ) {
-            log.info("Reading Learnf file");
+            log.debug("Reading Learnf file");
             for (Category c : moreCategories) {
                 brain.addCategory(c);
                 learnfGraph.addCategory(c);
-                patternGraph.addCategory(c);
+                //patternGraph.addCategory(c);
             }
             //this.categories.addAll(moreCategories);
         } else {
@@ -192,7 +224,7 @@ public class Bot {
                 //log.info("Brain size="+brain.root.size());
                 //brain.printgraph();
                 brain.addCategory(c);
-                patternGraph.addCategory(c);
+                //patternGraph.addCategory(c);
                 //brain.printgraph();
             }
             //this.categories.addAll(moreCategories);
@@ -202,24 +234,26 @@ public class Bot {
     /**
      * Load all brain categories from AIML directory
      */
-    void addCategoriesFromAIML() {
+    int addCategoriesFromAIML() {
         Timer timer = new Timer();
         timer.start();
+        int cnt=0;
         try {
             // Directory path here
             String file;
-            File folder = new File(MagicStrings.aiml_path);
+            File folder = new File(aiml_path);
             if (folder.exists()) {
-                File[] listOfFiles = folder.listFiles();
-                log.info("Loading AIML files from '{}'", MagicStrings.aiml_path);
+                File[] listOfFiles = IOUtils.listFiles(folder);
+                log.debug("Loading AIML files from {}", aiml_path);
                 for (File listOfFile : listOfFiles) {
                     if (listOfFile.isFile()) {
                         file = listOfFile.getName();
                         if (file.endsWith(".aiml") || file.endsWith(".AIML")) {
-                            log.info(file);
+                            log.debug(file);
                             try {
-                                ArrayList<Category> moreCategories = AIMLProcessor.AIMLToCategories(MagicStrings.aiml_path, file);
+                                ArrayList<Category> moreCategories = AIMLProcessor.AIMLToCategories(aiml_path, file);
                                 addMoreCategories(file, moreCategories);
+                                cnt += moreCategories.size();
                             } catch (Exception iex) {
                                 log.error("Problem loading '" + file +"': " + iex, iex);
                             }
@@ -227,33 +261,36 @@ public class Bot {
                     }
                 }
             }
-            else log.info("addCategories: '{}' does not exist.", MagicStrings.aiml_path);
+            else log.info("addCategoriesFromAIML: "+aiml_path+" does not exist.");
         } catch (Exception ex)  {
             ex.printStackTrace();
         }
-        log.info("Loaded {} categories in {} sec", brain.getCategories().size(), timer.elapsedTimeSecs());
+        log.debug("Loaded " + cnt + " categories in " + timer.elapsedTimeSecs() + " sec");
+        return cnt;
     }
 
     /**
      * load all brain categories from AIMLIF directory
      */
-    void addCategoriesFromAIMLIF() {
+    public int addCategoriesFromAIMLIF() {
         Timer timer = new Timer();
         timer.start();
+        int cnt=0;
         try {
             // Directory path here
             String file;
-            File folder = new File(MagicStrings.aimlif_path);
+            File folder = new File(aimlif_path);
             if (folder.exists()) {
-                File[] listOfFiles = folder.listFiles();
-                log.info("Loading AIML files from '{}'", MagicStrings.aimlif_path);
+                File[] listOfFiles = IOUtils.listFiles(folder);
+                log.debug("Loading AIML files from "+aimlif_path);
                 for (File listOfFile : listOfFiles) {
                     if (listOfFile.isFile()) {
                         file = listOfFile.getName();
                         if (file.endsWith(MagicStrings.aimlif_file_suffix) || file.endsWith(MagicStrings.aimlif_file_suffix.toUpperCase())) {
-                            //log.info(file);
+                            log.debug(file);
                             try {
-                                ArrayList<Category> moreCategories = readIFCategories(MagicStrings.aimlif_path + "/" + file);
+                                ArrayList<Category> moreCategories = readIFCategories(aimlif_path + "/" + file);
+                                cnt += moreCategories.size();
                                 addMoreCategories(file, moreCategories);
                              //   MemStats.memStats();
                             } catch (Exception iex) {
@@ -263,50 +300,26 @@ public class Bot {
                     }
                 }
             }
-            else log.info("addCategories: '{}' does not exist.", MagicStrings.aimlif_path);
+            else log.info("addCategoriesFromAIMLIF: " + aimlif_path + " does not exist.");
         } catch (Exception ex)  {
             ex.printStackTrace();
         }
-        log.info("Loaded {} categories in {} sec", brain.getCategories().size(), timer.elapsedTimeSecs());
+        if (MagicBooleans.trace_mode) System.out.println("Loaded " + cnt + " categories in " + timer.elapsedTimeSecs() + " sec");
+        return cnt;
     }
 
-    /**
-     * read deleted categories from AIMLIF file
-     */
-    public void readDeletedIFCategories() {
-        readCertainIFCategories(deletedGraph, MagicStrings.deleted_aiml_file);
-    }
-
-    /**
-     * read unfinished categories from AIMLIF file
-     */
-    public void readUnfinishedIFCategories() {
-        readCertainIFCategories(unfinishedGraph, MagicStrings.unfinished_aiml_file);
-    }
-
-    /**
-     * update unfinished categories removing any categories that have been finished
-     */
-    public void updateUnfinishedCategories () {
-        ArrayList<Category> unfinished = unfinishedGraph.getCategories();
-        unfinishedGraph = new Graphmaster(this);
-        for (Category c : unfinished) {
-            if (!brain.existsCategory(c)) unfinishedGraph.addCategory(c);
-        }
-    }
 
     /**
      * write all AIML and AIMLIF categories
      */
     public void writeQuit() {
         writeAIMLIFFiles();
-        log.info("Wrote AIMLIF Files");
+        //log.info("Wrote AIMLIF Files");
         writeAIMLFiles();
-        log.info("Wrote AIML Files");
-        writeDeletedIFCategories();
-        updateUnfinishedCategories();
+        //log.info("Wrote AIML Files");
+        /*  updateUnfinishedCategories();
         writeUnfinishedIFCategories();
-
+*/
     }
 
     /**
@@ -315,18 +328,21 @@ public class Bot {
      * @param graph   Graphmaster to store categories
      * @param fileName   file name of AIMLIF file
      */
-    public void readCertainIFCategories(Graphmaster graph, String fileName) {
-        File file = new File(MagicStrings.aimlif_path+"/"+fileName+MagicStrings.aimlif_file_suffix);
+    public int readCertainIFCategories(Graphmaster graph, String fileName) {
+        int cnt=0;
+        File file = new File(aimlif_path+"/"+fileName+MagicStrings.aimlif_file_suffix);
         if (file.exists()) {
             try {
-                ArrayList<Category> deletedCategories = readIFCategories(MagicStrings.aimlif_path+"/"+fileName+MagicStrings.aimlif_file_suffix);
-                for (Category d : deletedCategories) graph.addCategory(d);
-                log.info("readCertainIFCategories {} categories from {}", graph.getCategories().size(), fileName+MagicStrings.aimlif_file_suffix);
+                ArrayList<Category> certainCategories = readIFCategories(aimlif_path+"/"+fileName+MagicStrings.aimlif_file_suffix);
+                for (Category d : certainCategories) graph.addCategory(d);
+                cnt = certainCategories.size();
+                log.info("readCertainIFCategories " + cnt + " categories from " + fileName + MagicStrings.aimlif_file_suffix);
             } catch (Exception iex) {
                 log.error("Problem loading '" + fileName + "': " + iex, iex);
             }
         }
-        else log.info("No "+MagicStrings.deleted_aiml_file+MagicStrings.aimlif_file_suffix+" file found");
+        else log.info("No " + aimlif_path + "/" + fileName + MagicStrings.aimlif_file_suffix + " file found");
+        return cnt;
     }
 
     /**
@@ -338,16 +354,14 @@ public class Bot {
     public void writeCertainIFCategories(Graphmaster graph, String file) {
         if (MagicBooleans.trace_mode) log.info("writeCertainIFCaegories "+file+" size= "+graph.getCategories().size());
         writeIFCategories(graph.getCategories(), file+MagicStrings.aimlif_file_suffix);
-        File dir = new File(MagicStrings.aimlif_path);
+        File dir = new File(aimlif_path);
         dir.setLastModified(new Date().getTime());
     }
 
     /**
      * write deleted categories to AIMLIF file
      */
-    public void writeDeletedIFCategories() {
-        writeCertainIFCategories(deletedGraph, MagicStrings.deleted_aiml_file);
-    }
+
 
     /**
      * write learned categories to AIMLIF file
@@ -359,9 +373,9 @@ public class Bot {
     /**
      * write unfinished categories to AIMLIF file
      */
-    public void writeUnfinishedIFCategories() {
+   /* public void writeUnfinishedIFCategories() {
         writeCertainIFCategories(unfinishedGraph, MagicStrings.unfinished_aiml_file);
-    }
+    }*/
 
     /**
      * write categories to AIMLIF file
@@ -372,19 +386,19 @@ public class Bot {
     public void writeIFCategories (ArrayList<Category> cats, String filename)  {
         //log.info("writeIFCategories "+filename);
         BufferedWriter bw = null;
-        File existsPath = new File(MagicStrings.aimlif_path);
+        File existsPath = new File(aimlif_path);
         if (existsPath.exists())
         try {
             //Construct the bw object
-            bw = new BufferedWriter(new FileWriter(MagicStrings.aimlif_path+"/"+filename)) ;
+            bw = new BufferedWriter(new FileWriter(aimlif_path+"/"+filename)) ;
             for (Category category : cats) {
                 bw.write(Category.categoryToIF(category));
                 bw.newLine();
             }
         } catch (FileNotFoundException ex) {
-            ex.printStackTrace();
+            throw new RuntimeException(ex);
         } catch (IOException ex) {
-            ex.printStackTrace();
+            throw new RuntimeException(ex);
         } finally {
             //Close the bw
             try {
@@ -393,7 +407,7 @@ public class Bot {
                     bw.close();
                 }
             } catch (IOException ex) {
-                ex.printStackTrace();
+                new RuntimeException(ex);
             }
         }
     }
@@ -402,9 +416,10 @@ public class Bot {
      * Write all AIMLIF files from bot brain
      */
     public void writeAIMLIFFiles () {
-        log.info("writeAIMLIFFiles");
+        log.debug("writeAIMLIFFiles");
         HashMap<String, BufferedWriter> fileMap = new HashMap<String, BufferedWriter>();
-        if (deletedGraph.getCategories().size() > 0) writeDeletedIFCategories();
+        Category b = new Category(0, "BRAIN BUILD", "*", "*", new Date().toString(), "update.aiml");
+        brain.addCategory(b);
         ArrayList<Category> brainCategories = brain.getCategories();
         Collections.sort(brainCategories, Category.CATEGORY_NUMBER_COMPARATOR);
         for (Category c : brainCategories) {
@@ -413,7 +428,7 @@ public class Bot {
                 String fileName = c.getFilename();
                 if (fileMap.containsKey(fileName)) bw = fileMap.get(fileName);
                 else {
-                    bw = new BufferedWriter(new FileWriter(MagicStrings.aimlif_path+"/"+fileName+MagicStrings.aimlif_file_suffix));
+                    bw = new BufferedWriter(new FileWriter(aimlif_path+"/"+fileName+MagicStrings.aimlif_file_suffix));
                     fileMap.put(fileName, bw);
 
                 }
@@ -438,7 +453,7 @@ public class Bot {
             }
 
         }
-        File dir = new File(MagicStrings.aimlif_path);
+        File dir = new File(aimlif_path);
         dir.setLastModified(new Date().getTime());
     }
 
@@ -446,11 +461,12 @@ public class Bot {
      * Write all AIML files.  Adds categories for BUILD and DEVELOPMENT ENVIRONMENT
      */
     public void writeAIMLFiles () {
+        if (MagicBooleans.trace_mode) System.out.println("writeAIMLFiles");
         HashMap<String, BufferedWriter> fileMap = new HashMap<String, BufferedWriter>();
-        Category b = new Category(0, "BUILD", "*", "*", new Date().toString(), "update.aiml");
+        Category b = new Category(0, "BRAIN BUILD", "*", "*", new Date().toString(), "update.aiml");
         brain.addCategory(b);
-        b = new Category(0, "DELEVLOPMENT ENVIRONMENT", "*", "*", MagicStrings.programNameVersion, "update.aiml");
-        brain.addCategory(b);
+        //b = new Category(0, "PROGRAM VERSION", "*", "*", MagicStrings.program_name_version, "update.aiml");
+        //brain.addCategory(b);
         ArrayList<Category> brainCategories = brain.getCategories();
         Collections.sort(brainCategories, Category.CATEGORY_NUMBER_COMPARATOR);
         for (Category c : brainCategories) {
@@ -463,7 +479,7 @@ public class Bot {
                 if (fileMap.containsKey(fileName)) bw = fileMap.get(fileName);
                 else {
                     String copyright = Utilities.getCopyright(this, fileName);
-                    bw = new BufferedWriter(new FileWriter(MagicStrings.aiml_path+"/"+fileName));
+                    bw = new BufferedWriter(new FileWriter(aiml_path+"/"+fileName));
                     fileMap.put(fileName, bw);
                     bw.write("<?xml version=\"1.0\" encoding=\"UTF-8\"?>" + "\n" +
                             "<aiml>\n");
@@ -473,7 +489,7 @@ public class Bot {
                 bw.write(Category.categoryToAIML(c)+"\n");
                 //bw.newLine();
             } catch (Exception ex) {
-                ex.printStackTrace();
+                throw new RuntimeException(ex);
             }
         }
         Set set = fileMap.keySet();
@@ -492,7 +508,7 @@ public class Bot {
             }
 
         }
-        File dir = new File(MagicStrings.aiml_path);
+        File dir = new File(aiml_path);
         dir.setLastModified(new Date().getTime());
     }
 
@@ -501,133 +517,13 @@ public class Bot {
      */
     void addProperties() {
         try {
-            properties.getProperties(MagicStrings.config_path+"/properties.txt");
+            properties.getProperties(config_path+"/properties.txt");
         } catch (Exception ex)  {
             ex.printStackTrace();
         }
     }
 
-    static int leafPatternCnt = 0;
-    static int starPatternCnt = 0;
 
-    /** find suggested patterns in a graph of inputs
-     *
-     */
-    public void findPatterns() {
-        findPatterns(inputGraph.root, "");
-        log.info("{} Leaf Patterns {} Star Patterns", leafPatternCnt, starPatternCnt);
-    }
-
-    /** find patterns recursively
-     *
-     * @param node                      current graph node
-     * @param partialPatternThatTopic   partial pattern path
-     */
-    void findPatterns(Nodemapper node, String partialPatternThatTopic) {
-        if (NodemapperOperator.isLeaf(node)) {
-            //log.info("LEAF: "+node.category.getActivationCnt()+". "+partialPatternThatTopic);
-            if (node.category.getActivationCnt() > MagicNumbers.node_activation_cnt) {
-                //log.info("LEAF: "+node.category.getActivationCnt()+". "+partialPatternThatTopic+" "+node.shortCut);    //Start writing to the output stream
-                leafPatternCnt ++;
-                try {
-                    String categoryPatternThatTopic = "";
-                    if (node.shortCut) {
-                        //log.info("Partial patternThatTopic = "+partialPatternThatTopic);
-                        categoryPatternThatTopic = partialPatternThatTopic + " <THAT> * <TOPIC> *";
-                    }
-                    else categoryPatternThatTopic = partialPatternThatTopic;
-                    Category c = new Category(0, categoryPatternThatTopic,  MagicStrings.blank_template, MagicStrings.unknown_aiml_file);
-                    //if (brain.existsCategory(c)) log.info(c.inputThatTopic()+" Exists");
-                    //if (deleted.existsCategory(c)) log.info(c.inputThatTopic()+ " Deleted");
-                    if (!brain.existsCategory(c) && !deletedGraph.existsCategory(c) && !unfinishedGraph.existsCategory(c)) {
-                        patternGraph.addCategory(c);
-                        suggestedCategories.add(c);
-                    }
-                } catch (Exception e) {
-                    e.printStackTrace();
-                }
-            }
-        }
-        if(NodemapperOperator.size(node) > MagicNumbers.node_size) {
-            //log.info("STAR: "+NodemapperOperator.size(node)+". "+partialPatternThatTopic+" * <that> * <topic> *");
-            starPatternCnt ++;
-            try {
-                Category c = new Category(0, partialPatternThatTopic+" * <THAT> * <TOPIC> *",  MagicStrings.blank_template, MagicStrings.unknown_aiml_file);
-                //if (brain.existsCategory(c)) log.info(c.inputThatTopic()+" Exists");
-                //if (deleted.existsCategory(c)) log.info(c.inputThatTopic()+ " Deleted");
-                if (!brain.existsCategory(c) && !deletedGraph.existsCategory(c) && !unfinishedGraph.existsCategory(c)) {
-                    patternGraph.addCategory(c);
-                    suggestedCategories.add(c);
-                }
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
-        }
-        for (String key : NodemapperOperator.keySet(node)) {
-            Nodemapper value = NodemapperOperator.get(node, key);
-            findPatterns(value, partialPatternThatTopic + " " + key);
-        }
-
-    }
-
-    /** classify inputs into matching categories
-     *
-     * @param filename    file containing sample normalized inputs
-     */
-    public void classifyInputs (String filename) {
-        try{
-            FileInputStream fstream = new FileInputStream(filename);
-            // Get the object
-            BufferedReader br = new BufferedReader(new InputStreamReader(fstream));
-            String strLine;
-            //Read File Line By Line
-            int count = 0;
-            while ((strLine = br.readLine())!= null)   {
-                // Print the content on the console
-                //log.info("Classifying "+strLine);
-                if (strLine.startsWith("Human: ")) strLine = strLine.substring("Human: ".length(), strLine.length());
-                Nodemapper match = patternGraph.match(strLine, "unknown", "unknown");
-                match.category.incrementActivationCnt();
-                count += 1;
-            }
-            //Close the input stream
-            br.close();
-        } catch (Exception e){//Catch exception if any
-            log.error("Cannot classify inputs from '" + filename + "': " + e, e);
-        }
-    }
-
-    /** read sample inputs from filename, turn them into Paths, and
-     * add them to the graph.
-     *
-     * @param filename file containing sample inputs
-     */
-    public void graphInputs (String filename) {
-        try{
-            // Open the file that is the first
-            // command line parameter
-            FileInputStream fstream = new FileInputStream(filename);
-            // Get the object
-            BufferedReader br = new BufferedReader(new InputStreamReader(fstream));
-            String strLine;
-            //Read File Line By Line
-            while ((strLine = br.readLine()) != null)   {
-                //strLine = preProcessor.normalize(strLine);
-                Category c = new Category(0, strLine, "*", "*", "nothing", MagicStrings.unknown_aiml_file);
-                Nodemapper node = inputGraph.findNode(c);
-                if (node == null) {
-                  inputGraph.addCategory(c);
-                  c.incrementActivationCnt();
-                }
-                else node.category.incrementActivationCnt();
-                //log.info("Root branches="+g.root.size());
-            }
-            //Close the input stream
-            br.close();
-        }catch (Exception e){//Catch exception if any
-            log.error("Cannot graph inputs from '" + filename + "': " + e, e);
-        }
-    }
 
 
 
@@ -663,12 +559,102 @@ public class Bot {
         return categories;
     }
 
+
+
     /**
-     * check Graphmaster for shadowed categories
+     * Load all AIML Sets
      */
-    public void shadowChecker () {
-        shadowChecker(brain.root) ;
+    int addAIMLSets() {
+        int cnt = 0;
+        Timer timer = new Timer();
+        timer.start();
+        try {
+            // Directory path here
+            String file;
+            File folder = new File(sets_path);
+            if (folder.exists()) {
+                File[] listOfFiles = IOUtils.listFiles(folder);
+                log.debug("Loading AIML Sets files from {}", sets_path);
+                for (File listOfFile : listOfFiles) {
+                    if (listOfFile.isFile()) {
+                        file = listOfFile.getName();
+                        if (file.endsWith(".txt") || file.endsWith(".TXT")) {
+                            log.debug(file);
+                            String setName = file.substring(0, file.length()-".txt".length());
+                            log.debug("Read AIML Set {}", setName);
+                            AIMLSet aimlSet = new AIMLSet(setName, this);
+                            cnt += aimlSet.readAIMLSet(this);
+                            setMap.put(setName, aimlSet);
+                        }
+                    }
+                }
+            }
+            else log.info("addAIMLSets: " + sets_path + " does not exist.");
+        } catch (Exception ex)  {
+            throw new RuntimeException(ex);
+        }
+        return cnt;
     }
+
+    /**
+     * Load all AIML Maps
+     */
+    int addAIMLMaps() {
+        int cnt=0;
+        Timer timer = new Timer();
+        timer.start();
+        try {
+            // Directory path here
+            String file;
+            File folder = new File(maps_path);
+            if (folder.exists()) {
+                File[] listOfFiles = IOUtils.listFiles(folder);
+                log.debug("Loading AIML Map files from {}", maps_path);
+                for (File listOfFile : listOfFiles) {
+                    if (listOfFile.isFile()) {
+                        file = listOfFile.getName();
+                        if (file.endsWith(".txt") || file.endsWith(".TXT")) {
+                            log.debug(file);
+                            String mapName = file.substring(0, file.length()-".txt".length());
+                            log.debug("Read AIML Map {}", mapName);
+                            AIMLMap aimlMap = new AIMLMap(mapName, this);
+                            cnt += aimlMap.readAIMLMap(this);
+                            mapMap.put(mapName, aimlMap);
+                        }
+                    }
+                }
+            }
+            else log.info("addAIMLMaps: " + maps_path + " does not exist.");
+        } catch (Exception ex)  {
+            throw new RuntimeException(ex);
+        }
+        return cnt;
+    }
+    public void deleteLearnfCategories () {
+        ArrayList<Category> learnfCategories = learnfGraph.getCategories();
+        for (Category c : learnfCategories) {
+            Nodemapper n = brain.findNode(c);
+            System.out.println("Found node "+n+" for "+c.inputThatTopic());
+            if (n != null) n.category = null;
+        }
+        learnfGraph = new Graphmaster(this);
+    }
+    public void deleteLearnCategories () {
+        ArrayList<Category> learnCategories = learnGraph.getCategories();
+        for (Category c : learnCategories) {
+            Nodemapper n = brain.findNode(c);
+            System.out.println("Found node "+n+" for "+c.inputThatTopic());
+            if (n != null) n.category = null;
+        }
+        learnGraph = new Graphmaster(this);
+    }
+
+    /**
+ * check Graphmaster for shadowed categories
+ */
+public void shadowChecker () {
+    shadowChecker(brain.root) ;
+}
 
     /** traverse graph and test all categories found in leaf nodes for shadows
      *
@@ -676,14 +662,19 @@ public class Bot {
      */
     void shadowChecker(Nodemapper node) {
         if (NodemapperOperator.isLeaf(node)) {
-            String input = node.category.getPattern().replace("*", "XXX").replace("_", "XXX");
-            String that = node.category.getThat().replace("*", "XXX").replace("_", "XXX");
-            String topic = node.category.getTopic().replace("*", "XXX").replace("_", "XXX");
+            String input = node.category.getPattern();
+            input = brain.replaceBotProperties(input);
+            input =
+                    input.replace("*", "XXX").replace("_", "XXX").replace("^","").replace("#","");
+            String that = node.category.getThat().replace("*", "XXX").replace("_", "XXX").replace("^","").replace("#","");
+            String topic = node.category.getTopic().replace("*", "XXX").replace("_", "XXX").replace("^","").replace("#","");
+            input = instantiateSets(input);
+            System.out.println("shadowChecker: input="+input);
             Nodemapper match = brain.match(input, that, topic);
             if (match != node) {
-                log.info(Graphmaster.inputThatTopic(input, that, topic));
-                log.info("MATCHED:      {}", match.category.inputThatTopic());
-                log.info("SHOULD MATCH: {}", node.category.inputThatTopic());
+                System.out.println("" + Graphmaster.inputThatTopic(input, that, topic));
+                System.out.println("MATCHED:     "+match.category.inputThatTopic());
+                System.out.println("SHOULD MATCH:"+node.category.inputThatTopic());
             }
         }
         else {
@@ -693,70 +684,18 @@ public class Bot {
         }
     }
 
-    /**
-     * Load all AIML Sets
-     */
-    void addAIMLSets() {
-        Timer timer = new Timer();
-        timer.start();
-        try {
-            // Directory path here
-            String file;
-            File folder = new File(MagicStrings.sets_path);
-            if (folder.exists()) {
-                File[] listOfFiles = folder.listFiles();
-                log.info("Loading AIML Sets files from '{}'", MagicStrings.sets_path);
-                for (File listOfFile : listOfFiles) {
-                    if (listOfFile.isFile()) {
-                        file = listOfFile.getName();
-                        if (file.endsWith(".txt") || file.endsWith(".TXT")) {
-                            log.info(file);
-                            String setName = file.substring(0, file.length()-".txt".length());
-                            log.info("Read AIML Set {}", setName);
-                            AIMLSet aimlSet = new AIMLSet(setName);
-                            aimlSet.readAIMLSet(this);
-                            setMap.put(setName, aimlSet);
-                        }
-                    }
-                }
-            }
-            else log.info("addAIMLSets: {} does not exist.", MagicStrings.sets_path);
-        } catch (Exception ex)  {
-            ex.printStackTrace();
+    public String instantiateSets(String pattern) {
+        String[] splitPattern = pattern.split(" ");
+        pattern = "";
+        for (String x : splitPattern) {
+          if (x.startsWith("<SET>")) {
+              String setName = AIMLProcessor.trimTag(x, "SET");
+              AIMLSet set = setMap.get(setName);
+              if (set != null) x = "FOUNDITEM";
+              else x = "NOTFOUND";
+          }
+          pattern = pattern+" "+x;
         }
+        return pattern.trim();
     }
-
-    /**
-     * Load all AIML Maps
-     */
-    void addAIMLMaps() {
-        Timer timer = new Timer();
-        timer.start();
-        try {
-            // Directory path here
-            String file;
-            File folder = new File(MagicStrings.maps_path);
-            if (folder.exists()) {
-                File[] listOfFiles = folder.listFiles();
-                log.info("Loading AIML Map files from '{}'", MagicStrings.maps_path);
-                for (File listOfFile : listOfFiles) {
-                    if (listOfFile.isFile()) {
-                        file = listOfFile.getName();
-                        if (file.endsWith(".txt") || file.endsWith(".TXT")) {
-                            log.info(file);
-                            String mapName = file.substring(0, file.length()-".txt".length());
-                            log.info("Read AIML Map "+mapName);
-                            AIMLMap aimlMap = new AIMLMap(mapName);
-                            aimlMap.readAIMLMap(this);
-                            mapMap.put(mapName, aimlMap);
-                        }
-                    }
-                }
-            }
-            else log.info("addCategories: '{}' does not exist.", MagicStrings.aiml_path);
-        } catch (Exception ex)  {
-            ex.printStackTrace();
-        }
-    }
-
 }

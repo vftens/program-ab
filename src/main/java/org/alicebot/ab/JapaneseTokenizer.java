@@ -109,7 +109,7 @@ public class JapaneseTokenizer {
      * @return       morphed sentence with one space between words, preserving XML markup and AIML $ operation
      */
     public static String morphSentence (String sentence) {
-        if (!MagicBooleans.jp_morphological_analysis) return sentence;
+        //if (!MagicBooleans.jp_morphological_analysis) return sentence; // FIXME: Hendy's : where is this??
         String result = "";
         Matcher matcher = tagPattern.matcher(sentence);
         while (matcher.find()) {

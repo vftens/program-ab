@@ -43,10 +43,10 @@ public class Category {
      *
      * @return     and AIML Set of elements matching this category
      */
-    public AIMLSet getMatches() {
+    public AIMLSet getMatches(Bot bot) {
         if (matches != null)
         return matches;
-        else return new AIMLSet("No Matches");
+        else return new AIMLSet("No Matches", bot);
     }
 
     /**
@@ -185,11 +185,11 @@ public class Category {
      *
      * @param input      matching input
      */
-    public void addMatch (String input) {
+    public void addMatch (String input, Bot bot) {
         if (matches == null) {
             String setName = this.inputThatTopic().replace("*", "STAR").replace("_", "UNDERSCORE").replace(" ","-").replace("<THAT>","THAT").replace("<TOPIC>","TOPIC");
            // log.info("Created match set "+setName);
-            matches = new AIMLSet(setName);
+            matches = new AIMLSet(setName, bot);
         }
         matches.add(input);
     }
@@ -251,20 +251,23 @@ public class Category {
         String thatStatement = "";
         String result = "";
         String pattern = category.getPattern();
-        String[] splitPattern = pattern.split(" ");
-        for (String w : splitPattern) {
-            if (w.startsWith("<TYPE>")) w = w.toLowerCase();
-            pattern = pattern+" "+w;
+        if (pattern.contains("<SET>") || pattern.contains("<BOT")) {
+            String[] splitPattern = pattern.split(" ");
+            String rpattern = "";
+            for (String w : splitPattern) {
+                if (w.startsWith("<SET>") || w.startsWith("<BOT") || w.startsWith("NAME=")) {w = w.toLowerCase();}
+                rpattern = rpattern+" "+w;
+            }
+            pattern = rpattern.trim();
         }
-        pattern = pattern.trim();
-        if (pattern.contains("type")) log.info("Rebuilt pattern "+pattern);
+        //if (pattern.contains("set")) log.info("Rebuilt pattern "+pattern);
 
         String NL = System.getProperty("line.separator");
         NL = "\n";
         try {
             if (!category.getTopic().equals("*")) { topicStart = "<topic name=\""+category.getTopic()+"\">"+NL; topicEnd = "</topic>"+NL;}
             if (!category.getThat().equals("*")) { thatStatement = "<that>"+category.getThat()+"</that>";}
-            result = topicStart+"<category><pattern>"+category.getPattern()+"</pattern>"+thatStatement+NL+
+            result = topicStart+"<category><pattern>"+pattern+"</pattern>"+thatStatement+NL+
                     "<template>"+category.getTemplate()+"</template>"+NL+
                     "</category>"+topicEnd;
         } catch (Exception ex) {

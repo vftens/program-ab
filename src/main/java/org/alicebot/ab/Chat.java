@@ -1,10 +1,17 @@
 package org.alicebot.ab;
+
 import java.io.BufferedWriter;
 import java.io.FileWriter;
 
 import org.alicebot.ab.utils.IOUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import org.alicebot.ab.utils.IOUtils;
+import org.alicebot.ab.utils.JapaneseUtils;
+
+import java.io.*;
+
 /* Program AB Reference AIML 2.0 implementation
         Copyright (C) 2013 ALICE A.I. Foundation
         Contact: info@alicebot.org
@@ -30,16 +37,19 @@ import org.slf4j.LoggerFactory;
 public class Chat {
 	private static final Logger log = LoggerFactory.getLogger(Chat.class);
     public Bot bot;
-    public String customerId = MagicStrings.unknown_customer_id;
+    public boolean doWrites;
+    public String customerId = MagicStrings.default_Customer_id;
     public History<History> thatHistory= new History<History>("that");
     public History<String> requestHistory=new History<String>("request");
     public History<String> responseHistory=new History<String>("response");
+   // public History<String> repetitionHistory = new History<String>("repetition");
     public History<String> inputHistory=new History<String>("input");
     public Predicates predicates = new Predicates();
     public static String matchTrace = "";
     public static boolean locationKnown = false;
     public static String longitude;
     public static String latitude;
+    public TripleStore tripleStore = new TripleStore("anon", this);
 
     /**
      * Constructor  (defualt customer ID)
@@ -47,22 +57,30 @@ public class Chat {
      * @param bot    the bot to chat with
      */
     public Chat(Bot bot)  {
-        this(bot, "0");
+        this(bot, true, "0");
     }
+
+    public Chat(Bot bot, boolean doWrites) {
+		this(bot, doWrites, "0");
+	}
 
     /**
      * Constructor
      * @param bot             bot to chat with
      * @param customerId      unique customer identifier
      */
-    public Chat(Bot bot, String customerId) {
+    public Chat(Bot bot, boolean doWrites, String customerId) {
         this.customerId = customerId;
         this.bot = bot;
+		this.doWrites = doWrites;
         History<String> contextThatHistory = new History<String>();
         contextThatHistory.add(MagicStrings.default_that);
         thatHistory.add(contextThatHistory);
         addPredicates();
+        addTriples();
         predicates.put("topic", MagicStrings.default_topic);
+        predicates.put("jsenabled", MagicStrings.js_enabled);
+        if (MagicBooleans.trace_mode) System.out.println("Chat Session Created for bot "+bot.name);
     }
 
     /**
@@ -70,10 +88,42 @@ public class Chat {
      */
     void addPredicates() {
         try {
-            predicates.getPredicateDefaults(MagicStrings.config_path+"/predicates.txt") ;
+            predicates.getPredicateDefaults(bot.config_path+"/predicates.txt") ;
         } catch (Exception ex)  {
             ex.printStackTrace();
         }
+    }
+    /**
+     * Load Triple Store knowledge base
+     */
+
+    int addTriples() {
+        int tripleCnt = 0;
+        if (MagicBooleans.trace_mode) System.out.println("Loading Triples from "+bot.config_path+"/triples.txt");
+        File f = new File(bot.config_path+"/triples.txt");
+        if (f.exists())
+        try {
+            InputStream is = new FileInputStream(f);
+            BufferedReader br = new BufferedReader(new InputStreamReader(is));
+            String strLine;
+            //Read File Line By Line
+            while ((strLine = br.readLine()) != null) {
+                String[] triple = strLine.split(":");
+                if (triple.length >= 3) {
+                    String subject = triple[0];
+                    String predicate = triple[1];
+                    String object = triple[2];
+                    tripleStore.addTriple(subject, predicate, object);
+                    //Log.i(TAG, "Added Triple:" + subject + " " + predicate + " " + object);
+                    tripleCnt++;
+                }
+            }
+            is.close();
+        } catch (Exception ex) {
+            ex.printStackTrace();
+        }
+        if (MagicBooleans.trace_mode) System.out.println("Loaded "+tripleCnt+" triples");
+        return tripleCnt;
     }
 
     /**
@@ -81,7 +131,7 @@ public class Chat {
      */
     public void chat () {
         BufferedWriter bw = null;
-        String logFile = MagicStrings.log_path+"/log_"+customerId+".txt";
+        String logFile = bot.log_path+"/log_"+customerId+".txt";
         try {
             //Construct the bw object
             bw = new BufferedWriter(new FileWriter(logFile, true)) ;
@@ -114,11 +164,25 @@ public class Chat {
      * @return              bot's reply
      */
     String respond(String input, String that, String topic, History contextThatHistory) {
-        String response;
+		//MagicBooleans.trace("chat.respond(input: " + input + ", that: " + that + ", topic: " + topic + ", contextThatHistory: " + contextThatHistory + ")");
+        boolean repetition = true;
+        //inputHistory.printHistory();
+        for (int i = 0; i < MagicNumbers.repetition_count; i++) {
+            //System.out.println(request.toUpperCase()+"=="+inputHistory.get(i)+"? "+request.toUpperCase().equals(inputHistory.get(i)));
+            if (inputHistory.get(i) == null || !input.toUpperCase().equals(inputHistory.get(i).toUpperCase()))
+                repetition = false;
+        }
+        if (input.equals(MagicStrings.null_input)) repetition = false;
         inputHistory.add(input);
+        if (repetition) {input = MagicStrings.repetition_detected;}
+
+        String response;
+
         response = AIMLProcessor.respond(input, that, topic, this);
+		//MagicBooleans.trace("in chat.respond(), response: " + response);
         String normResponse = bot.preProcessor.normalize(response);
-        normResponse = JapaneseTokenizer.morphSentence(normResponse); //response.trim(); //
+		//MagicBooleans.trace("in chat.respond(), normResponse: " + normResponse);
+        if (MagicBooleans.jp_tokenize) normResponse = JapaneseUtils.tokenizeSentence(normResponse);
         String sentences[] = bot.preProcessor.sentenceSplit(normResponse);
         for (int i = 0; i < sentences.length; i++) {
           that = sentences[i];
@@ -126,7 +190,9 @@ public class Chat {
           if (that.trim().equals("")) that = MagicStrings.default_that;
           contextThatHistory.add(that);
         }
-        return response.trim()+"  ";
+		String result = response.trim()+"  ";
+		//MagicBooleans.trace("in chat.respond(), returning: " + result);
+		return result;
     }
 
     /**
@@ -151,36 +217,38 @@ public class Chat {
      * @return
      */
     public String multisentenceRespond(String request) {
+
+        //MagicBooleans.trace("chat.multisentenceRespond(request: " + request + ")");
         String response="";
         matchTrace="";
-        /*thatHistory.printHistory();
-        inputHistory.printHistory();
-        requestHistory.printHistory();
-        responseHistory.printHistory();*/
         try {
-        String norm = bot.preProcessor.normalize(request);
-        norm = JapaneseTokenizer.morphSentence(norm);
-        log.debug("normalized = "+norm);
-        String sentences[] = bot.preProcessor.sentenceSplit(norm);
-        History<String> contextThatHistory = new History<String>("contextThat");
-        for (int i = 0; i < sentences.length; i++) {
-            //log.info("Human: "+sentences[i]);
-            AIMLProcessor.trace_count = 0;
-            String reply = respond(sentences[i], contextThatHistory);
-            response += "  "+reply;
-            //log.info("Robot: "+reply);
-        }
-        requestHistory.add(request);
-        responseHistory.add(response);
-        thatHistory.add(contextThatHistory);
-        //if (MagicBooleans.trace_mode)  log.info(matchTrace);
+            String normalized = bot.preProcessor.normalize(request);
+            normalized = JapaneseUtils.tokenizeSentence(normalized);
+            //MagicBooleans.trace("in chat.multisentenceRespond(), normalized: " + normalized);
+            String sentences[] = bot.preProcessor.sentenceSplit(normalized);
+            History<String> contextThatHistory = new History<String>("contextThat");
+            for (int i = 0; i < sentences.length; i++) {
+                //System.out.println("Human: "+sentences[i]);
+                AIMLProcessor.trace_count = 0;
+                String reply = respond(sentences[i], contextThatHistory);
+                response += "  "+reply;
+                //System.out.println("Robot: "+reply);
+            }
+            requestHistory.add(request);
+            responseHistory.add(response);
+            thatHistory.add(contextThatHistory);
+            response = response.replaceAll("[\n]+", "\n");
+            response = response.trim();
         } catch (Exception ex) {
             ex.printStackTrace();
             return MagicStrings.error_bot_response;
         }
 
-        bot.writeLearnfIFCategories();
-        return response.trim();
+        if (doWrites) {
+            bot.writeLearnfIFCategories();
+        }
+        //MagicBooleans.trace("in chat.multisentenceRespond(), returning: " + response);
+        return response;
     }
 
 

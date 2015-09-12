@@ -4,6 +4,8 @@ import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.InputStream;
 import java.io.StringWriter;
+import org.w3c.dom.Document;
+import org.w3c.dom.Node;
 
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
@@ -18,6 +20,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.w3c.dom.Document;
 import org.w3c.dom.Node;
+import java.io.ByteArrayInputStream;
+import java.io.File;
+import java.io.InputStream;
+import java.io.StringWriter;
 
 
 public class DomUtils {
@@ -57,6 +63,7 @@ public class DomUtils {
      * @return            XML string
      */
     public static String nodeToString(Node node) {
+		//MagicBooleans.trace("nodeToString(node: " + node + ")");
         StringWriter sw = new StringWriter();
         try {
             Transformer t = TransformerFactory.newInstance().newTransformer();
@@ -66,6 +73,8 @@ public class DomUtils {
         } catch (TransformerException te) {
             log.error("nodeToString Transformer Exception: " + te, te);
         }
-        return sw.toString();
+		String result = sw.toString();
+		//MagicBooleans.trace("nodeToString() returning: " + result);
+        return result;
     }
 }
